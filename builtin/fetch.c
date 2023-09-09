@@ -308,7 +308,7 @@ static void clear_item(struct refname_hash_entry *item)
 
 
 static void add_already_queued_tags(const char *refname,
-				    const struct object_id *old_oid,
+				    const struct object_id *old_oid UNUSED,
 				    const struct object_id *new_oid,
 				    void *cb_data)
 {
@@ -2207,10 +2207,7 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 		OPT_CALLBACK_F(0, "refmap", NULL, N_("refmap"),
 			       N_("specify fetch refmap"), PARSE_OPT_NONEG, parse_refmap_arg),
 		OPT_STRING_LIST('o', "server-option", &server_options, N_("server-specific"), N_("option to transmit")),
-		OPT_SET_INT('4', "ipv4", &family, N_("use IPv4 addresses only"),
-				TRANSPORT_FAMILY_IPV4),
-		OPT_SET_INT('6', "ipv6", &family, N_("use IPv6 addresses only"),
-				TRANSPORT_FAMILY_IPV6),
+		OPT_IPVERSION(&family),
 		OPT_STRING_LIST(0, "negotiation-tip", &negotiation_tip, N_("revision"),
 				N_("report that we have only objects reachable from this object")),
 		OPT_BOOL(0, "negotiate-only", &negotiate_only,

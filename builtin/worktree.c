@@ -24,7 +24,6 @@
 #include "submodule.h"
 #include "utf8.h"
 #include "worktree.h"
-#include "wrapper.h"
 #include "quote.h"
 
 #define BUILTIN_WORKTREE_ADD_USAGE \
@@ -54,14 +53,14 @@
 	"(branch with no commits) for this repository, you can do so\n" \
 	"using the --orphan flag:\n" \
 	"\n" \
-	"	git worktree add --orphan -b %s %s\n")
+	"    git worktree add --orphan -b %s %s\n")
 
 #define WORKTREE_ADD_ORPHAN_NO_DASH_B_HINT_TEXT \
 	_("If you meant to create a worktree containing a new orphan branch\n" \
 	"(branch with no commits) for this repository, you can do so\n" \
 	"using the --orphan flag:\n" \
 	"\n" \
-	"	git worktree add --orphan %s\n")
+	"    git worktree add --orphan %s\n")
 
 static const char * const git_worktree_usage[] = {
 	BUILTIN_WORKTREE_ADD_USAGE,
@@ -629,10 +628,10 @@ static void print_preparing_worktree_line(int detach,
  *
  * Returns 0 on failure and non-zero on success.
  */
-static int first_valid_ref(const char *refname,
-			   const struct object_id *oid,
-			   int flags,
-			   void *cb_data)
+static int first_valid_ref(const char *refname UNUSED,
+			   const struct object_id *oid UNUSED,
+			   int flags UNUSED,
+			   void *cb_data UNUSED)
 {
 	return 1;
 }
@@ -697,7 +696,7 @@ static int can_use_remote_refs(const struct add_opts *opts)
 		return 1;
 	} else if (!opts->force && remote_get(NULL)) {
 		die(_("No local or remote refs exist despite at least one remote\n"
-		      "present, stopping; use 'add -f' to overide or fetch a remote first"));
+		      "present, stopping; use 'add -f' to override or fetch a remote first"));
 	}
 	return 0;
 }

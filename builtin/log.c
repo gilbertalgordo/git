@@ -6,7 +6,6 @@
  */
 #include "git-compat-util.h"
 #include "abspath.h"
-#include "alloc.h"
 #include "config.h"
 #include "environment.h"
 #include "gettext.h"
@@ -550,7 +549,7 @@ static int cmd_log_walk_no_free(struct rev_info *rev)
 	    rev->diffopt.flags.check_failed) {
 		return 02;
 	}
-	return diff_result_code(&rev->diffopt, 0);
+	return diff_result_code(&rev->diffopt);
 }
 
 static int cmd_log_walk(struct rev_info *rev)
@@ -719,8 +718,7 @@ static int show_tree_object(const struct object_id *oid UNUSED,
 	return 0;
 }
 
-static void show_setup_revisions_tweak(struct rev_info *rev,
-				       struct setup_revision_opt *opt)
+static void show_setup_revisions_tweak(struct rev_info *rev)
 {
 	if (rev->first_parent_only)
 		diff_merges_default_to_first_parent(rev);
@@ -863,8 +861,7 @@ int cmd_log_reflog(int argc, const char **argv, const char *prefix)
 	return cmd_log_deinit(cmd_log_walk(&rev), &rev);
 }
 
-static void log_setup_revisions_tweak(struct rev_info *rev,
-				      struct setup_revision_opt *opt)
+static void log_setup_revisions_tweak(struct rev_info *rev)
 {
 	if (rev->diffopt.flags.default_follow_renames &&
 	    diff_check_follow_pathspec(&rev->prune_data, 0))
@@ -1256,7 +1253,15 @@ static void show_diffstat(struct rev_info *rev,
 	fprintf(rev->diffopt.file, "\n");
 }
 
+static void read_desc_file(struct strbuf *buf, const char *desc_file)
+{
+	if (strbuf_read_file(buf, desc_file, 0) < 0)
+		die_errno(_("unable to read branch description file '%s'"),
+			  desc_file);
+}
+
 static void prepare_cover_text(struct pretty_print_context *pp,
+			       const char *description_file,
 			       const char *branch_name,
 			       struct strbuf *sb,
 			       const char *encoding,
@@ -1270,7 +1275,9 @@ static void prepare_cover_text(struct pretty_print_context *pp,
 	if (cover_from_description_mode == COVER_FROM_NONE)
 		goto do_pp;
 
-	if (branch_name && *branch_name)
+	if (description_file && *description_file)
+		read_desc_file(&description_sb, description_file);
+	else if (branch_name && *branch_name)
 		read_branch_desc(&description_sb, branch_name);
 	if (!description_sb.len)
 		goto do_pp;
@@ -1316,6 +1323,7 @@ static void get_notes_args(struct strvec *arg, struct rev_info *rev)
 static void make_cover_letter(struct rev_info *rev, int use_separate_file,
 			      struct commit *origin,
 			      int nr, struct commit **list,
+			      const char *description_file,
 			      const char *branch_name,
 			      int quiet)
 {
@@ -1355,7 +1363,8 @@ static void make_cover_letter(struct rev_info *rev, int use_separate_file,
 	pp.rev = rev;
 	pp.print_email_subject = 1;
 	pp_user_info(&pp, NULL, &sb, committer, encoding);
-	prepare_cover_text(&pp, branch_name, &sb, encoding, need_8bit_cte);
+	prepare_cover_text(&pp, description_file, branch_name, &sb,
+			   encoding, need_8bit_cte);
 	fprintf(rev->diffopt.file, "%s\n", sb.buf);
 
 	strbuf_release(&sb);
@@ -1471,17 +1480,14 @@ static int subject_prefix = 0;
 static int subject_prefix_callback(const struct option *opt, const char *arg,
 			    int unset)
 {
-	BUG_ON_OPT_NEG(unset);
-	subject_prefix = 1;
-	((struct rev_info *)opt->value)->subject_prefix = arg;
-	return 0;
-}
+	struct strbuf *sprefix;
 
-static int rfc_callback(const struct option *opt, const char *arg, int unset)
-{
 	BUG_ON_OPT_NEG(unset);
-	BUG_ON_OPT_ARG(arg);
-	return subject_prefix_callback(opt, "RFC PATCH", unset);
+	sprefix = opt->value;
+	subject_prefix = 1;
+	strbuf_reset(sprefix);
+	strbuf_addstr(sprefix, arg);
+	return 0;
 }
 
 static int numbered_cmdline_opt = 0;
@@ -1896,6 +1902,7 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 	int quiet = 0;
 	const char *reroll_count = NULL;
 	char *cover_from_description_arg = NULL;
+	char *description_file = NULL;
 	char *branch_name = NULL;
 	char *base_commit = NULL;
 	struct base_tree_info bases;
@@ -1910,6 +1917,7 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 	struct strbuf rdiff_title = STRBUF_INIT;
 	struct strbuf sprefix = STRBUF_INIT;
 	int creation_factor = -1;
+	int rfc = 0;
 
 	const struct option builtin_format_patch_options[] = {
 		OPT_CALLBACK_F('n', "numbered", &numbered, NULL,
@@ -1933,13 +1941,13 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 			    N_("mark the series as Nth re-roll")),
 		OPT_INTEGER(0, "filename-max-length", &fmt_patch_name_max,
 			    N_("max length of output filename")),
-		OPT_CALLBACK_F(0, "rfc", &rev, NULL,
-			    N_("use [RFC PATCH] instead of [PATCH]"),
-			    PARSE_OPT_NOARG | PARSE_OPT_NONEG, rfc_callback),
+		OPT_BOOL(0, "rfc", &rfc, N_("use [RFC PATCH] instead of [PATCH]")),
 		OPT_STRING(0, "cover-from-description", &cover_from_description_arg,
 			    N_("cover-from-description-mode"),
 			    N_("generate parts of a cover letter based on a branch's description")),
-		OPT_CALLBACK_F(0, "subject-prefix", &rev, N_("prefix"),
+		OPT_FILENAME(0, "description-file", &description_file,
+			     N_("use branch description from file")),
+		OPT_CALLBACK_F(0, "subject-prefix", &sprefix, N_("prefix"),
 			    N_("use [<prefix>] instead of [PATCH]"),
 			    PARSE_OPT_NONEG, subject_prefix_callback),
 		OPT_CALLBACK_F('o', "output-directory", &output_directory,
@@ -2019,11 +2027,11 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 	rev.max_parents = 1;
 	rev.diffopt.flags.recursive = 1;
 	rev.diffopt.no_free = 1;
-	rev.subject_prefix = fmt_patch_subject_prefix;
 	memset(&s_r_opt, 0, sizeof(s_r_opt));
 	s_r_opt.def = "HEAD";
 	s_r_opt.revarg_opt = REVARG_COMMITTISH;
 
+	strbuf_addstr(&sprefix, fmt_patch_subject_prefix);
 	if (format_no_prefix)
 		diff_set_noprefix(&rev.diffopt);
 
@@ -2051,12 +2059,15 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 	if (cover_from_description_arg)
 		cover_from_description_mode = parse_cover_from_description(cover_from_description_arg);
 
+	if (rfc)
+		strbuf_insertstr(&sprefix, 0, "RFC ");
+
 	if (reroll_count) {
-		strbuf_addf(&sprefix, "%s v%s",
-			    rev.subject_prefix, reroll_count);
+		strbuf_addf(&sprefix, " v%s", reroll_count);
 		rev.reroll_count = reroll_count;
-		rev.subject_prefix = sprefix.buf;
 	}
+
+	rev.subject_prefix = sprefix.buf;
 
 	for (i = 0; i < extra_hdr.nr; i++) {
 		strbuf_addstr(&buf, extra_hdr.items[i].string);
@@ -2324,7 +2335,7 @@ int cmd_format_patch(int argc, const char **argv, const char *prefix)
 		if (thread)
 			gen_message_id(&rev, "cover");
 		make_cover_letter(&rev, !!output_directory,
-				  origin, nr, list, branch_name, quiet);
+				  origin, nr, list, description_file, branch_name, quiet);
 		print_bases(&bases, rev.diffopt.file);
 		print_signature(rev.diffopt.file);
 		total++;
